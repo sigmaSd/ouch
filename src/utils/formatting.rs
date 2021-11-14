@@ -19,6 +19,10 @@ pub fn to_utf(os_str: impl AsRef<OsStr>) -> String {
 /// normally used for presentation sake.
 /// If this function fails, it will return source path as a PathBuf.
 pub fn strip_cur_dir(source_path: &Path) -> &Path {
+    if source_path == Path::new(".") {
+        // Nothing to strip
+        return source_path;
+    }
     source_path.strip_prefix(Component::CurDir).unwrap_or(source_path)
 }
 
