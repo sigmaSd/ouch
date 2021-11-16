@@ -276,7 +276,11 @@ pub fn run(args: Opts, question_policy: QuestionPolicy) -> crate::Result<()> {
 // formats contains each format necessary for compression, example: [Tar, Gz] (in compression order)
 // output_file is the resulting compressed file name, example: "compressed.tar.gz"
 fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs::File) -> crate::Result<()> {
-    let total_input_size = files.iter().map(|f| f.metadata().unwrap().len()).sum();
+    // If the input files contain a directory, then the total size will be underestimated
+    let (total_input_size, precise) = files
+        .iter()
+        .map(|f| (f.metadata().unwrap().len(), f.is_file()))
+        .fold((0, true), |(total_size, and_precise), (size, precise)| (total_size + size, and_precise & precise));
     let output_file_path = output_file.path().to_path_buf();
     let file_writer = BufWriter::with_capacity(BUFFER_CAPACITY, output_file);
 
@@ -307,13 +311,13 @@ fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs:
 
     match formats[0].compression_formats[0] {
         Gzip | Bzip | Lz4 | Lzma | Zstd => {
-            let _progress = progress::ProgressByPath::new(total_input_size, output_file_path);
+            let _progress = progress::ProgressByPath::new(total_input_size, precise, output_file_path);
             writer = chain_writer_encoder(&formats[0].compression_formats[0], writer)?;
             let mut reader = fs::File::open(&files[0]).unwrap();
             io::copy(&mut reader, &mut writer)?;
         }
         Tar => {
-            let _progress = progress::ProgressByPath::new(total_input_size, output_file_path);
+            let _progress = progress::ProgressByPath::new(total_input_size, precise, output_file_path);
             archive::tar::build_archive_from_paths(&files, &mut writer)?;
             writer.flush()?;
         }
@@ -329,7 +333,8 @@ fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs:
 
             let mut vec_buffer = io::Cursor::new(vec![]);
             // Safety: &vec_buffer is valid and vec_buffer will remain valid after dropping the progress bar.
-            let _progress = unsafe { progress::ProgressByCursor::new(total_input_size, &vec_buffer as *const _) };
+            let _progress =
+                unsafe { progress::ProgressByCursor::new(total_input_size, precise, &vec_buffer as *const _) };
             archive::zip::build_archive_from_paths(&files, &mut vec_buffer)?;
             let vec_buffer = vec_buffer.into_inner();
             io::copy(&mut vec_buffer.as_slice(), &mut writer)?;

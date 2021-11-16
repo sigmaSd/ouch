@@ -14,13 +14,19 @@ pub struct ProgressByCursor {
 }
 impl ProgressByCursor {
     /// Create a ProgressBar using an io::Cursor to check periodically for the progress (for zip archives)
+    /// If precise is true, the total_input_size will be displayed as the total_bytes size
     /// # Safety
     /// The pointer to the cursor must be valid and remain valid until the ProgressBar is dropped.
-    pub unsafe fn new(total_input_size: u64, cursor: *const Cursor<Vec<u8>>) -> Self {
+    pub unsafe fn new(total_input_size: u64, precise: bool, cursor: *const Cursor<Vec<u8>>) -> Self {
         let cursor = {
             struct SendPtr(*const Cursor<Vec<u8>>);
             unsafe impl Send for SendPtr {}
             SendPtr(cursor)
+        };
+        let template = if precise {
+            "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})"
+        } else {
+            "{spinner:.green} [{elapsed}] [{wide_bar:.cyan/blue}] {bytes}/?? ({bytes_per_sec}, {eta}) {path}"
         };
         let (tx, rx) = mpsc::channel();
 
@@ -30,9 +36,7 @@ impl ProgressByCursor {
                 c.0
             };
             let pb = ProgressBar::new(total_input_size);
-            pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
-        .progress_chars("#>-"));
+            pb.set_style(ProgressStyle::default_bar().template(template).progress_chars("#>-"));
             while rx.try_recv().is_err() {
                 thread::sleep(Duration::from_millis(100));
                 // Safety:
@@ -57,16 +61,26 @@ pub struct ProgressByPath {
 }
 impl ProgressByPath {
     /// Create a ProgressBar using a path to an output file to check periodically for the progress
-    pub fn new(total_input_size: u64, output_file_path: PathBuf) -> Self {
+    /// If precise is true, the total_input_size will be displayed as the total_bytes size
+    pub fn new(total_input_size: u64, precise: bool, output_file_path: PathBuf) -> Self {
+        //NOTE: canonicalize is here to avoid a weird bug:
+        //      > If output_file_path is a nested path and it exists and the user overwrite it
+        //      >> output_file_path.exists() will always return false (somehow)
+        //      - canonicalize seems to fix this
+        let output_file_path = output_file_path.canonicalize().unwrap();
+
         let (tx, rx) = mpsc::channel();
+        let template = if precise {
+            "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})"
+        } else {
+            "{spinner:.green} [{elapsed}] [{wide_bar:.cyan/blue}] {bytes}/?? ({bytes_per_sec}, {eta}) {path}"
+        };
         thread::spawn(move || {
             let pb = ProgressBar::new(total_input_size);
-            pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
-        .progress_chars("#>-"));
+            pb.set_style(ProgressStyle::default_bar().template(template).progress_chars("#>-"));
             while rx.try_recv().is_err() {
-                thread::sleep(Duration::from_millis(100));
                 pb.set_position(output_file_path.metadata().unwrap().len());
+                thread::sleep(Duration::from_millis(100));
             }
             pb.finish();
         });
