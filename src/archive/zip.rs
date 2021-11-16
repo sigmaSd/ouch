@@ -97,9 +97,10 @@ where
 }
 
 /// Compresses the archives given by `input_filenames` into the file given previously to `writer`.
-pub fn build_archive_from_paths<W>(input_filenames: &[PathBuf], writer: W) -> crate::Result<W>
+pub fn build_archive_from_paths<W, D>(input_filenames: &[PathBuf], writer: W, mut display_handle: D) -> crate::Result<W>
 where
     W: Write + Seek,
+    D: Write,
 {
     let mut writer = zip::ZipWriter::new(writer);
     let options = zip::write::FileOptions::default();
@@ -125,7 +126,8 @@ where
             let entry = entry?;
             let path = entry.path();
 
-            info!("Compressing '{}'.", to_utf(path));
+            write!(display_handle, "Compressing '{}'.", to_utf(path)).unwrap();
+            display_handle.flush().unwrap();
 
             if path.is_dir() {
                 if dir_is_empty(path) {

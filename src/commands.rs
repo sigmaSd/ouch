@@ -317,8 +317,8 @@ fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs:
             io::copy(&mut reader, &mut writer)?;
         }
         Tar => {
-            let _progress = progress::ProgressByPath::new(total_input_size, precise, output_file_path);
-            archive::tar::build_archive_from_paths(&files, &mut writer)?;
+            let mut progress = progress::ProgressByPath::new(total_input_size, precise, output_file_path);
+            archive::tar::build_archive_from_paths(&files, &mut writer, progress.display_handle())?;
             writer.flush()?;
         }
         Zip => {
@@ -333,9 +333,9 @@ fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs:
 
             let mut vec_buffer = io::Cursor::new(vec![]);
             // Safety: &vec_buffer is valid and vec_buffer will remain valid after dropping the progress bar.
-            let _progress =
+            let mut progress =
                 unsafe { progress::ProgressByCursor::new(total_input_size, precise, &vec_buffer as *const _) };
-            archive::zip::build_archive_from_paths(&files, &mut vec_buffer)?;
+            archive::zip::build_archive_from_paths(&files, &mut vec_buffer, progress.display_handle())?;
             let vec_buffer = vec_buffer.into_inner();
             io::copy(&mut vec_buffer.as_slice(), &mut writer)?;
         }

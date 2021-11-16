@@ -64,9 +64,10 @@ pub fn list_archive(reader: Box<dyn Read>) -> crate::Result<Vec<FileInArchive>> 
 }
 
 /// Compresses the archives given by `input_filenames` into the file given previously to `writer`.
-pub fn build_archive_from_paths<W>(input_filenames: &[PathBuf], writer: W) -> crate::Result<W>
+pub fn build_archive_from_paths<W, D>(input_filenames: &[PathBuf], writer: W, mut display_handle: D) -> crate::Result<W>
 where
     W: Write,
+    D: Write,
 {
     let mut builder = tar::Builder::new(writer);
 
@@ -80,7 +81,8 @@ where
             let entry = entry?;
             let path = entry.path();
 
-            info!("Compressing '{}'.", utils::to_utf(path));
+            write!(display_handle, "Compressing '{}'.", utils::to_utf(path)).unwrap();
+            display_handle.flush().unwrap();
 
             if path.is_dir() {
                 builder.append_dir(path, path)?;
