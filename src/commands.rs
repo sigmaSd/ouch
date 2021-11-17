@@ -281,7 +281,11 @@ fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs:
         .iter()
         .map(|f| (f.metadata().unwrap().len(), f.is_file()))
         .fold((0, true), |(total_size, and_precise), (size, precise)| (total_size + size, and_precise & precise));
-    let output_file_path = output_file.path().to_path_buf();
+    //NOTE: canonicalize is here to avoid a weird bug:
+    //      > If output_file_path is a nested path and it exists and the user overwrite it
+    //      >> output_file_path.exists() will always return false (somehow)
+    //      - canonicalize seems to fix this
+    let output_file_path = output_file.path().canonicalize()?;
     let file_writer = BufWriter::with_capacity(BUFFER_CAPACITY, output_file);
 
     let mut writer: Box<dyn Write> = Box::new(file_writer);
@@ -311,13 +315,21 @@ fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs:
 
     match formats[0].compression_formats[0] {
         Gzip | Bzip | Lz4 | Lzma | Zstd => {
-            let _progress = progress::ProgressByPath::new(total_input_size, precise, output_file_path);
+            let _progress = progress::Progress::new(
+                total_input_size,
+                precise,
+                Box::new(move || output_file_path.metadata().unwrap().len()),
+            );
             writer = chain_writer_encoder(&formats[0].compression_formats[0], writer)?;
             let mut reader = fs::File::open(&files[0]).unwrap();
             io::copy(&mut reader, &mut writer)?;
         }
         Tar => {
-            let mut progress = progress::ProgressByPath::new(total_input_size, precise, output_file_path);
+            let mut progress = progress::Progress::new(
+                total_input_size,
+                precise,
+                Box::new(move || output_file_path.metadata().unwrap().len()),
+            );
             archive::tar::build_archive_from_paths(&files, &mut writer, progress.display_handle())?;
             writer.flush()?;
         }
@@ -332,9 +344,20 @@ fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs:
             eprintln!("\tThe design of .zip makes it impossible to compress via stream.");
 
             let mut vec_buffer = io::Cursor::new(vec![]);
-            // Safety: &vec_buffer is valid and vec_buffer will remain valid after dropping the progress bar.
-            let mut progress =
-                unsafe { progress::ProgressByCursor::new(total_input_size, precise, &vec_buffer as *const _) };
+
+            // These next lines are needed for displaying the progress bar
+            let vec_buffer_ptr = {
+                struct FlyPtr(*const io::Cursor<Vec<u8>>);
+                unsafe impl Send for FlyPtr {}
+                FlyPtr(&vec_buffer as *const _)
+            };
+            let current_position_fn = Box::new(move || {
+                let vec_buffer_ptr = &vec_buffer_ptr;
+                // Safety: ptr is valid and vec_buffer is still alive
+                unsafe { &*vec_buffer_ptr.0 }.position()
+            });
+            let mut progress = progress::Progress::new(total_input_size, precise, current_position_fn);
+
             archive::zip::build_archive_from_paths(&files, &mut vec_buffer, progress.display_handle())?;
             let vec_buffer = vec_buffer.into_inner();
             io::copy(&mut vec_buffer.as_slice(), &mut writer)?;
