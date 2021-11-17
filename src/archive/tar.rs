@@ -12,18 +12,18 @@ use walkdir::WalkDir;
 
 use crate::{
     error::FinalError,
-    info,
     list::FileInArchive,
     utils::{self, Bytes},
-    QuestionPolicy,
 };
 
 /// Unpacks the archive given by `archive` into the folder given by `into`.
+/// Assumes that output_folder is empty
 pub fn unpack_archive(
     reader: Box<dyn Read>,
     output_folder: &Path,
-    question_policy: QuestionPolicy,
+    mut display_handle: impl Write,
 ) -> crate::Result<Vec<PathBuf>> {
+    assert!(output_folder.read_dir().unwrap().count() == 0);
     let mut archive = tar::Archive::new(reader);
 
     let mut files_unpacked = vec![];
@@ -31,14 +31,11 @@ pub fn unpack_archive(
         let mut file = file?;
 
         let file_path = output_folder.join(file.path()?);
-        if !utils::clear_path(&file_path, question_policy)? {
-            // User doesn't want to overwrite
-            continue;
-        }
-
         file.unpack_in(output_folder)?;
 
-        info!("{:?} extracted. ({})", output_folder.join(file.path()?), Bytes::new(file.size()));
+        write!(display_handle, "{:?} extracted. ({})", output_folder.join(file.path()?), Bytes::new(file.size()))
+            .unwrap();
+        display_handle.flush().unwrap();
 
         files_unpacked.push(file_path);
     }

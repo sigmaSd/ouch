@@ -15,21 +15,23 @@ use crate::{
     info,
     list::FileInArchive,
     utils::{
-        cd_into_same_dir_as, clear_path, concatenate_os_str_list, dir_is_empty, get_invalid_utf8_paths, strip_cur_dir,
-        to_utf, Bytes,
+        cd_into_same_dir_as, concatenate_os_str_list, dir_is_empty, get_invalid_utf8_paths, strip_cur_dir, to_utf,
+        Bytes,
     },
-    QuestionPolicy,
 };
 
-/// Unpacks the archive given by `archive` into the folder given by `into`.
-pub fn unpack_archive<R>(
+/// Unpacks the archive given by `archive` into the folder given by `output_folder`.
+/// Assumes that output_folder is empty
+pub fn unpack_archive<R, D>(
     mut archive: ZipArchive<R>,
-    into: &Path,
-    question_policy: QuestionPolicy,
+    output_folder: &Path,
+    mut display_handle: D,
 ) -> crate::Result<Vec<PathBuf>>
 where
     R: Read + Seek,
+    D: Write,
 {
+    assert!(output_folder.read_dir().unwrap().count() == 0);
     let mut unpacked_files = vec![];
     for idx in 0..archive.len() {
         let mut file = archive.by_index(idx)?;
@@ -38,17 +40,14 @@ where
             None => continue,
         };
 
-        let file_path = into.join(file_path);
-        if !clear_path(&file_path, question_policy)? {
-            // User doesn't want to overwrite
-            continue;
-        }
+        let file_path = output_folder.join(file_path);
 
         check_for_comments(&file);
 
         match (&*file.name()).ends_with('/') {
             _is_dir @ true => {
-                println!("File {} extracted to \"{}\"", idx, file_path.display());
+                write!(display_handle, "File {} extracted to \"{}\"", idx, file_path.display()).unwrap();
+                display_handle.flush().unwrap();
                 fs::create_dir_all(&file_path)?;
             }
             _is_file @ false => {
@@ -59,7 +58,8 @@ where
                 }
                 let file_path = strip_cur_dir(file_path.as_path());
 
-                info!("{:?} extracted. ({})", file_path.display(), Bytes::new(file.size()));
+                write!(display_handle, "{:?} extracted. ({})", file_path.display(), Bytes::new(file.size())).unwrap();
+                display_handle.flush().unwrap();
 
                 let mut output_file = fs::File::create(&file_path)?;
                 io::copy(&mut file, &mut output_file)?;
