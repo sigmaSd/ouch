@@ -23,7 +23,7 @@ pub fn unpack_archive(
     output_folder: &Path,
     mut display_handle: impl Write,
 ) -> crate::Result<Vec<PathBuf>> {
-    assert!(output_folder.read_dir().unwrap().count() == 0);
+    assert!(output_folder.read_dir().expect("dir exists").count() == 0);
     let mut archive = tar::Archive::new(reader);
 
     let mut files_unpacked = vec![];
@@ -33,9 +33,8 @@ pub fn unpack_archive(
         let file_path = output_folder.join(file.path()?);
         file.unpack_in(output_folder)?;
 
-        write!(display_handle, "{:?} extracted. ({})", output_folder.join(file.path()?), Bytes::new(file.size()))
-            .unwrap();
-        display_handle.flush().unwrap();
+        write!(display_handle, "{:?} extracted. ({})", output_folder.join(file.path()?), Bytes::new(file.size()))?;
+        display_handle.flush()?;
 
         files_unpacked.push(file_path);
     }
@@ -78,8 +77,8 @@ where
             let entry = entry?;
             let path = entry.path();
 
-            write!(display_handle, "Compressing '{}'.", utils::to_utf(path)).unwrap();
-            display_handle.flush().unwrap();
+            write!(display_handle, "Compressing '{}'.", utils::to_utf(path))?;
+            display_handle.flush()?;
 
             if path.is_dir() {
                 builder.append_dir(path, path)?;

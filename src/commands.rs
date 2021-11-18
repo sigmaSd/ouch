@@ -276,16 +276,18 @@ pub fn run(args: Opts, question_policy: QuestionPolicy) -> crate::Result<()> {
 // formats contains each format necessary for compression, example: [Tar, Gz] (in compression order)
 // output_file is the resulting compressed file name, example: "compressed.tar.gz"
 fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs::File) -> crate::Result<()> {
+    // The next lines are for displaying the progress bar
     // If the input files contain a directory, then the total size will be underestimated
     let (total_input_size, precise) = files
         .iter()
-        .map(|f| (f.metadata().unwrap().len(), f.is_file()))
+        .map(|f| (f.metadata().expect("file exists").len(), f.is_file()))
         .fold((0, true), |(total_size, and_precise), (size, precise)| (total_size + size, and_precise & precise));
     //NOTE: canonicalize is here to avoid a weird bug:
     //      > If output_file_path is a nested path and it exists and the user overwrite it
     //      >> output_file_path.exists() will always return false (somehow)
     //      - canonicalize seems to fix this
     let output_file_path = output_file.path().canonicalize()?;
+
     let file_writer = BufWriter::with_capacity(BUFFER_CAPACITY, output_file);
 
     let mut writer: Box<dyn Write> = Box::new(file_writer);
@@ -318,7 +320,7 @@ fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs:
             let _progress = progress::Progress::new(
                 total_input_size,
                 precise,
-                Some(Box::new(move || output_file_path.metadata().unwrap().len())),
+                Some(Box::new(move || output_file_path.metadata().expect("file exists").len())),
             );
             writer = chain_writer_encoder(&formats[0].compression_formats[0], writer)?;
             let mut reader = fs::File::open(&files[0]).unwrap();
@@ -328,7 +330,7 @@ fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs:
             let mut progress = progress::Progress::new(
                 total_input_size,
                 precise,
-                Some(Box::new(move || output_file_path.metadata().unwrap().len())),
+                Some(Box::new(move || output_file_path.metadata().expect("file exists").len())),
             );
             archive::tar::build_archive_from_paths(&files, &mut writer, progress.display_handle())?;
             writer.flush()?;
@@ -381,7 +383,7 @@ fn decompress_file(
     question_policy: QuestionPolicy,
 ) -> crate::Result<()> {
     assert!(output_dir.exists());
-    let input_total_size = input_file_path.metadata().unwrap().len();
+    let input_total_size = input_file_path.metadata().expect("file exists").len();
     let reader = fs::File::open(&input_file_path)?;
     // Zip archives are special, because they require io::Seek, so it requires it's logic separated
     // from decoder chaining.
@@ -445,7 +447,7 @@ fn decompress_file(
 
             let current_position_fn = Box::new({
                 let output_file_path = output_file_path.clone();
-                move || output_file_path.clone().metadata().unwrap().len()
+                move || output_file_path.clone().metadata().expect("file exists").len()
             });
             let _progress = progress::Progress::new(input_total_size, true, Some(current_position_fn));
             io::copy(&mut reader, &mut writer)?;

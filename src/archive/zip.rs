@@ -31,7 +31,7 @@ where
     R: Read + Seek,
     D: Write,
 {
-    assert!(output_folder.read_dir().unwrap().count() == 0);
+    assert!(output_folder.read_dir().expect("dir exists").count() == 0);
     let mut unpacked_files = vec![];
     for idx in 0..archive.len() {
         let mut file = archive.by_index(idx)?;
@@ -46,8 +46,8 @@ where
 
         match (&*file.name()).ends_with('/') {
             _is_dir @ true => {
-                write!(display_handle, "File {} extracted to \"{}\"", idx, file_path.display()).unwrap();
-                display_handle.flush().unwrap();
+                write!(display_handle, "File {} extracted to \"{}\"", idx, file_path.display())?;
+                display_handle.flush()?;
                 fs::create_dir_all(&file_path)?;
             }
             _is_file @ false => {
@@ -58,8 +58,8 @@ where
                 }
                 let file_path = strip_cur_dir(file_path.as_path());
 
-                write!(display_handle, "{:?} extracted. ({})", file_path.display(), Bytes::new(file.size())).unwrap();
-                display_handle.flush().unwrap();
+                write!(display_handle, "{:?} extracted. ({})", file_path.display(), Bytes::new(file.size()))?;
+                display_handle.flush()?;
 
                 let mut output_file = fs::File::create(&file_path)?;
                 io::copy(&mut file, &mut output_file)?;
@@ -126,8 +126,8 @@ where
             let entry = entry?;
             let path = entry.path();
 
-            write!(display_handle, "Compressing '{}'.", to_utf(path)).unwrap();
-            display_handle.flush().unwrap();
+            write!(display_handle, "Compressing '{}'.", to_utf(path))?;
+            display_handle.flush()?;
 
             if path.is_dir() {
                 if dir_is_empty(path) {

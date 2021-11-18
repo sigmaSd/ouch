@@ -8,6 +8,14 @@ use std::{
 
 use indicatif::{ProgressBar, ProgressStyle};
 
+/// Draw a ProgressBar using a function that checks periodically for the progress
+pub struct Progress {
+    draw_stop: Sender<()>,
+    clean_done: Receiver<()>,
+    display_handle: DisplayHandle,
+}
+
+/// Writes to this struct will be displayed on the progress bar.
 struct DisplayHandle {
     buf: Vec<u8>,
     sender: Sender<String>,
@@ -19,17 +27,13 @@ impl io::Write for DisplayHandle {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.sender.send(String::from_utf8(self.buf.drain(..).collect()).unwrap()).unwrap();
-        Ok(())
+        fn io_error<X>(_: X) -> io::Error {
+            io::Error::new(io::ErrorKind::Other, "failed to flush buffer")
+        }
+        self.sender.send(String::from_utf8(self.buf.drain(..).collect()).map_err(io_error)?).map_err(io_error)
     }
 }
 
-/// Draw a ProgressBar using an function that checks periodically for the progress
-pub struct Progress {
-    draw_stop: Sender<()>,
-    cleaning_done: Receiver<()>,
-    display_handle: DisplayHandle,
-}
 impl Progress {
     /// Create a ProgressBar using a function that checks periodically for the progress
     /// If precise is true, the total_input_size will be displayed as the total_bytes size
@@ -71,11 +75,11 @@ impl Progress {
                 thread::sleep(Duration::from_millis(100));
             }
             pb.finish();
-            clean_tx.send(()).unwrap();
+            let _ = clean_tx.send(());
         });
         Progress {
             draw_stop: draw_tx,
-            cleaning_done: clean_rx,
+            clean_done: clean_rx,
             display_handle: DisplayHandle { buf: Vec::new(), sender: msg_tx },
         }
     }
@@ -87,6 +91,6 @@ impl Progress {
 impl Drop for Progress {
     fn drop(&mut self) {
         let _ = self.draw_stop.send(());
-        let _ = self.cleaning_done.recv();
+        let _ = self.clean_done.recv();
     }
 }
