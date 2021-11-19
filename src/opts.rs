@@ -19,9 +19,9 @@ pub struct Opts {
     #[clap(short, long)]
     pub no: bool,
 
-    /// Disable progress bar.
-    #[clap(long)]
-    pub disable_progress_bar: bool,
+    /// A
+    #[clap(short, long)]
+    pub accessible: bool,
 
     /// Ouch and claps subcommands
     #[clap(subcommand)]

@@ -21,7 +21,7 @@ use crate::{
     },
     info,
     list::{self, ListOptions},
-    progress::{self, ProgressBarPolicy},
+    progress,
     utils::{
         self, concatenate_os_str_list, dir_is_empty, nice_directory_display, to_utf, try_infer_extension,
         user_wants_to_continue_decompressing,
@@ -43,7 +43,7 @@ fn represents_several_files(files: &[PathBuf]) -> bool {
 }
 
 /// Entrypoint of ouch, receives cli options and matches Subcommand to decide what to do
-pub fn run(args: Opts, question_policy: QuestionPolicy, progress_bar_policy: ProgressBarPolicy) -> crate::Result<()> {
+pub fn run(args: Opts, question_policy: QuestionPolicy) -> crate::Result<()> {
     match args.cmd {
         Subcommand::Compress { mut files, output: output_path } => {
             // If the output_path file exists and is the same as some of the input files, warn the user and skip those inputs (in order to avoid compression recursion)
@@ -156,7 +156,7 @@ pub fn run(args: Opts, question_policy: QuestionPolicy, progress_bar_policy: Pro
                     formats = new_formats;
                 }
             }
-            let compress_result = compress_files(files, formats, output_file, progress_bar_policy);
+            let compress_result = compress_files(files, formats, output_file);
 
             // If any error occurred, delete incomplete file
             if compress_result.is_err() {
@@ -169,7 +169,7 @@ pub fn run(args: Opts, question_policy: QuestionPolicy, progress_bar_policy: Pro
                     eprintln!("  Error:{reset} {}{red}.{reset}\n", err, reset = *colors::RESET, red = *colors::RED);
                 }
             } else {
-                info!("Successfully compressed '{}'.", to_utf(output_path));
+                info!(a11y_show, "Successfully compressed '{}'.", to_utf(output_path));
             }
 
             compress_result?;
@@ -226,14 +226,7 @@ pub fn run(args: Opts, question_policy: QuestionPolicy, progress_bar_policy: Pro
 
             for ((input_path, formats), file_name) in files.iter().zip(formats).zip(output_paths) {
                 let output_file_path = output_dir.join(file_name); // Path used by single file format archives
-                decompress_file(
-                    input_path,
-                    formats,
-                    &output_dir,
-                    output_file_path,
-                    question_policy,
-                    progress_bar_policy,
-                )?;
+                decompress_file(input_path, formats, &output_dir, output_file_path, question_policy)?;
             }
         }
         Subcommand::List { archives: files, tree } => {
@@ -282,12 +275,7 @@ pub fn run(args: Opts, question_policy: QuestionPolicy, progress_bar_policy: Pro
 // files are the list of paths to be compressed: ["dir/file1.txt", "dir/file2.txt"]
 // formats contains each format necessary for compression, example: [Tar, Gz] (in compression order)
 // output_file is the resulting compressed file name, example: "compressed.tar.gz"
-fn compress_files(
-    files: Vec<PathBuf>,
-    formats: Vec<Extension>,
-    output_file: fs::File,
-    progress_bar_policy: ProgressBarPolicy,
-) -> crate::Result<()> {
+fn compress_files(files: Vec<PathBuf>, formats: Vec<Extension>, output_file: fs::File) -> crate::Result<()> {
     // The next lines are for displaying the progress bar
     // If the input files contain a directory, then the total size will be underestimated
     let (total_input_size, precise) = files
@@ -330,7 +318,6 @@ fn compress_files(
     match formats[0].compression_formats[0] {
         Gzip | Bzip | Lz4 | Lzma | Zstd => {
             let _progress = progress::Progress::new(
-                progress_bar_policy,
                 total_input_size,
                 precise,
                 Some(Box::new(move || output_file_path.metadata().expect("file exists").len())),
@@ -341,7 +328,6 @@ fn compress_files(
         }
         Tar => {
             let mut progress = progress::Progress::new(
-                progress_bar_policy,
                 total_input_size,
                 precise,
                 Some(Box::new(move || output_file_path.metadata().expect("file exists").len())),
@@ -372,8 +358,7 @@ fn compress_files(
                 // Safety: ptr is valid and vec_buffer is still alive
                 unsafe { &*vec_buffer_ptr.0 }.position()
             });
-            let mut progress =
-                progress::Progress::new(progress_bar_policy, total_input_size, precise, Some(current_position_fn));
+            let mut progress = progress::Progress::new(total_input_size, precise, Some(current_position_fn));
 
             archive::zip::build_archive_from_paths(&files, &mut vec_buffer, progress.display_handle())?;
             let vec_buffer = vec_buffer.into_inner();
@@ -396,7 +381,6 @@ fn decompress_file(
     output_dir: &Path,
     output_file_path: PathBuf,
     question_policy: QuestionPolicy,
-    progress_bar_policy: ProgressBarPolicy,
 ) -> crate::Result<()> {
     assert!(output_dir.exists());
     let input_total_size = input_file_path.metadata().expect("file exists").len();
@@ -412,7 +396,7 @@ fn decompress_file(
         let zip_archive = zip::ZipArchive::new(reader)?;
         let files = if let ControlFlow::Continue(files) = smart_unpack(
             Box::new(move |output_dir| {
-                let mut progress = progress::Progress::new(progress_bar_policy, input_total_size, true, None);
+                let mut progress = progress::Progress::new(input_total_size, true, None);
                 crate::archive::zip::unpack_archive(zip_archive, output_dir, progress.display_handle())
             }),
             output_dir,
@@ -423,8 +407,8 @@ fn decompress_file(
         } else {
             return Ok(());
         };
-        info!("Successfully decompressed archive in {}.", nice_directory_display(output_dir));
-        info!("Files unpacked: {}", files.len());
+        info!(a11y_show, "Successfully decompressed archive in {}.", nice_directory_display(output_dir));
+        info!(a11y_show, "Files unpacked: {}", files.len());
         return Ok(());
     }
 
@@ -465,15 +449,14 @@ fn decompress_file(
                 let output_file_path = output_file_path.clone();
                 move || output_file_path.clone().metadata().expect("file exists").len()
             });
-            let _progress =
-                progress::Progress::new(progress_bar_policy, input_total_size, true, Some(current_position_fn));
+            let _progress = progress::Progress::new(input_total_size, true, Some(current_position_fn));
             io::copy(&mut reader, &mut writer)?;
             files_unpacked = vec![output_file_path];
         }
         Tar => {
             files_unpacked = if let ControlFlow::Continue(files) = smart_unpack(
                 Box::new(move |output_dir| {
-                    let mut progress = progress::Progress::new(progress_bar_policy, input_total_size, true, None);
+                    let mut progress = progress::Progress::new(input_total_size, true, None);
                     crate::archive::tar::unpack_archive(reader, output_dir, progress.display_handle())
                 }),
                 output_dir,
@@ -499,7 +482,7 @@ fn decompress_file(
 
             files_unpacked = if let ControlFlow::Continue(files) = smart_unpack(
                 Box::new(move |output_dir| {
-                    let mut progress = progress::Progress::new(progress_bar_policy, input_total_size, true, None);
+                    let mut progress = progress::Progress::new(input_total_size, true, None);
                     crate::archive::zip::unpack_archive(zip_archive, output_dir, progress.display_handle())
                 }),
                 output_dir,
@@ -513,8 +496,8 @@ fn decompress_file(
         }
     }
 
-    info!("Successfully decompressed archive in {}.", nice_directory_display(output_dir));
-    info!("Files unpacked: {}", files_unpacked.len());
+    info!(a11y_show, "Successfully decompressed archive in {}.", nice_directory_display(output_dir));
+    info!(a11y_show, "Files unpacked: {}", files_unpacked.len());
 
     Ok(())
 }
@@ -648,7 +631,7 @@ fn check_mime_type(
             // File with no extension
             // Try to detect it automatically and prompt the user about it
             if let Some(detected_format) = try_infer_extension(path) {
-                info!("Detected file: `{}` extension as `{}`", path.display(), detected_format);
+                info!(a11y_show, "Detected file: `{}` extension as `{}`", path.display(), detected_format);
                 if user_wants_to_continue_decompressing(path, question_policy)? {
                     format.push(detected_format);
                 } else {
@@ -672,7 +655,7 @@ fn check_mime_type(
         } else {
             // NOTE: If this actually produces no false positives, we can upgrade it in the future
             // to a warning and ask the user if he wants to continue decompressing.
-            info!("Could not detect the extension of `{}`", path.display());
+            info!(a11y_show, "Could not detect the extension of `{}`", path.display());
         }
     }
     Ok(ControlFlow::Continue(()))

@@ -8,6 +8,8 @@ use std::{
 
 use indicatif::{ProgressBar, ProgressStyle};
 
+use crate::cli::ACCESSIBLE;
+
 /// Enable/Disable the progress bar.
 #[derive(Debug, Clone, Copy)]
 pub enum ProgressBarPolicy {
@@ -56,19 +58,14 @@ impl io::Write for DisplayHandle {
 impl Progress {
     /// Create a ProgressBar using a function that checks periodically for the progress
     /// If precise is true, the total_input_size will be displayed as the total_bytes size
-    /// If ProgressBarPolicy is disabled, the progress bar wont be shown and it will simply forward any message it
+    /// If ACCESSIBLE is set, the progress bar wont be shown and it will simply forward any message it
     /// receives to stdout
-    pub fn new(
-        progress_bar_policy: ProgressBarPolicy,
-        total_input_size: u64,
-        precise: bool,
-        current_position_fn: Option<Box<dyn Fn() -> u64 + Send>>,
-    ) -> Self {
+    pub fn new(total_input_size: u64, precise: bool, current_position_fn: Option<Box<dyn Fn() -> u64 + Send>>) -> Self {
         let (draw_tx, draw_rx) = mpsc::channel();
         let (clean_tx, clean_rx) = mpsc::channel();
         let (msg_tx, msg_rx) = mpsc::channel();
 
-        if !progress_bar_policy.is_enabled() {
+        if *ACCESSIBLE.get().unwrap() {
             thread::spawn(move || {
                 while let Ok(msg) = msg_rx.recv() {
                     let msg: String = msg;
