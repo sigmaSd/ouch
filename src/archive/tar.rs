@@ -12,6 +12,7 @@ use walkdir::WalkDir;
 
 use crate::{
     error::FinalError,
+    info,
     list::FileInArchive,
     utils::{self, Bytes},
 };
@@ -33,8 +34,7 @@ pub fn unpack_archive(
         let file_path = output_folder.join(file.path()?);
         file.unpack_in(output_folder)?;
 
-        write!(display_handle, "{:?} extracted. ({})", output_folder.join(file.path()?), Bytes::new(file.size()))?;
-        display_handle.flush()?;
+        info!(@display_handle, "{:?} extracted. ({})", output_folder.join(file.path()?), Bytes::new(file.size()));
 
         files_unpacked.push(file_path);
     }
@@ -77,8 +77,7 @@ where
             let entry = entry?;
             let path = entry.path();
 
-            write!(display_handle, "Compressing '{}'.", utils::to_utf(path))?;
-            display_handle.flush()?;
+            info!(@display_handle, "Compressing '{}'.", utils::to_utf(path));
 
             if path.is_dir() {
                 builder.append_dir(path, path)?;

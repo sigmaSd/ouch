@@ -8,6 +8,6 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let (args, skip_questions_positively) = Opts::parse_args()?;
-    commands::run(args, skip_questions_positively)
+    let (args, skip_questions_positively, progress_bar_policy) = Opts::parse_args()?;
+    commands::run(args, skip_questions_positively, progress_bar_policy)
 }
