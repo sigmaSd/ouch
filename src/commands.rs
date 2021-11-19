@@ -13,7 +13,6 @@ use utils::colors;
 
 use crate::{
     archive,
-    cli::ProgressBarPolicy,
     error::FinalError,
     extension::{
         self,
@@ -22,7 +21,7 @@ use crate::{
     },
     info,
     list::{self, ListOptions},
-    progress,
+    progress::{self, ProgressBarPolicy},
     utils::{
         self, concatenate_os_str_list, dir_is_empty, nice_directory_display, to_utf, try_infer_extension,
         user_wants_to_continue_decompressing,

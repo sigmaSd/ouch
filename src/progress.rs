@@ -1,6 +1,6 @@
 //! Module that provides functions to display progress bars for compressing and decompressing files.
 use std::{
-    io::self,
+    io,
     sync::mpsc::{self, Receiver, Sender},
     thread,
     time::Duration,
@@ -8,7 +8,23 @@ use std::{
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::cli::ProgressBarPolicy;
+/// Enable/Disable the progress bar.
+#[derive(Debug, Clone, Copy)]
+pub enum ProgressBarPolicy {
+    /// Disable the progress bar.
+    Disable,
+    /// Enable the progress bar.
+    Enable,
+}
+impl ProgressBarPolicy {
+    /// Returns `true` if the progress bar is enabled.
+    pub fn is_enabled(self) -> bool {
+        match self {
+            ProgressBarPolicy::Enable => true,
+            ProgressBarPolicy::Disable => false,
+        }
+    }
+}
 
 /// Draw a ProgressBar using a function that checks periodically for the progress
 pub struct Progress {

@@ -9,25 +9,7 @@ use std::{
 use clap::Parser;
 use fs_err as fs;
 
-use crate::{Opts, QuestionPolicy, Subcommand};
-
-/// Enable/Disable the progress bar.
-#[derive(Debug, Clone, Copy)]
-pub enum ProgressBarPolicy {
-    /// Disable the progress bar.
-    Disable,
-    /// Enable the progress bar.
-    Enable,
-}
-impl ProgressBarPolicy {
-    /// Returns `true` if the progress bar is enabled.
-    pub fn is_enabled(self) -> bool {
-        match self {
-            ProgressBarPolicy::Enable => true,
-            ProgressBarPolicy::Disable => false,
-        }
-    }
-}
+use crate::{progress::ProgressBarPolicy, Opts, QuestionPolicy, Subcommand};
 
 impl Opts {
     /// A helper method that calls `clap::Parser::parse`.
